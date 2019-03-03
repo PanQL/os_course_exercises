@@ -17,10 +17,19 @@
 ## 思考题
 
 - 你理解的对于类似ucore这样需要进程/虚存/文件系统的操作系统，在硬件设计上至少需要有哪些直接的支持？至少应该提供哪些功能的特权指令？
+  - 答：我认为硬件上至少需要的直接支持有：  
+       - 中断机制：能够产生硬件中断并且在产生中断时存储相关的异常信息。包括时钟中断、硬件中断等。
+       - 段页式内存管理：能够有相应的段页式内存管理的寻址机制以及对应的寄存器支持。  
+  - 至少应该提供的特权指令有
+       - 特权级切换指令。
 
 - 你理解的x86的实模式和保护模式有什么区别？物理地址、线性地址、逻辑地址的含义分别是什么？
+    - x86的实模式和保护模式的区别主要在于可访问的地址空间的大小。
+    - 物理地址的对应存储介质上相应位置的地址。是给到总线上进行访存的地址。
+    - 线性地址对应的是逻辑地址经过段式内存管理机制的寻址后得到的地址。
+    - 逻辑地址直接用于内核和用户程序的访存，需要经过段页式机制的地址转换才能得到物理上真正的存储位置。是给到MMU的地址。
 
-- 你理解的risc-v的特权模式有什么区别？不同 模式在地址访问方面有何特征？
+- 你理解的risc-v的特权模式有什么区别？不同模式在地址访问方面有何特征？
 
 - 理解ucore中list_entry双向链表数据结构及其4个基本操作函数和ucore中一些基于它的代码实现（此题不用填写内容）
 
@@ -39,7 +48,9 @@
     unsigned gd_off_31_16 : 16;        // high bits of offset in segment
  };
 ```
-
+* 对应含义  
+    - 数字代表的是结构体的位域所对应的大小，即占用的比特数。
+    
 - 对于如下的代码段，
 
 ```
@@ -62,18 +73,59 @@ intr=8;
 SETGATE(intr, 1,2,3,0);
 ```
 请问执行上述指令后， intr的值是多少？
+- 执行完上述指令之后，intr的值是0x20003。因为最终intr所在的4个Byte恰好是作为位结构体的低32位，且遵循小端模式，那么可以推知intr的赋值仅与off以及sel有关。且结合小端模式可知，intr的值为0x20003.
 
 ### 课堂实践练习
 
 #### 练习一
 
-1. 请在ucore中找一段你认为难度适当的AT&T格式X86汇编代码，尝试解释其含义。
+1. 请在ucore中找一段你认为难度适当的AT&T格式X86汇编代码，尝试解释其含义。  
+    我找到的汇编代码如下：
+    ```
+    seta20.1:
+    # 将0x64处的一个字节读入到%al，判断0x2和al与的结果
+    # 等待8042输入缓冲区空闲
+    inb $0x64, %al                                  # Wait for not busy(8042 input buffer empty).
+    testb $0x2, %al
+    jnz seta20.1
+
+    # 8042键盘缓冲端口输出0xd1
+    movb $0xd1, %al                                 # 0xd1 -> port 0x64
+    outb %al, $0x64                                 # 0xd1 means: write data to 8042's P2 port
+
+    seta20.2:
+    # 将0x64处的一个字节读入到%al，判断0x2和al与的结果
+    # 等待8042输入缓冲区空闲
+    inb $0x64, %al                                  # Wait for not busy(8042 input buffer empty).
+    testb $0x2, %al
+    jnz seta20.2
+
+    # 8042键盘缓冲端口输出0xdf
+    movb $0xdf, %al                                 # 0xdf -> port 0x60
+    outb %al, $0x60                                 # 0xdf = 11011111, means set P2's A20 bit(the 1 bit) to 1
+
+    # Switch from real to protected mode, using a bootstrap GDT
+    # and segment translation that makes virtual addresses
+    # identical to physical addresses, so that the
+    # effective memory map does not change during the switch.
+    lgdt gdtdesc
+    movl %cr0, %eax     # 将%cr0最低位置为1
+    orl $CR0_PE_ON, %eax
+    movl %eax, %cr0
+
+    # Jump to next instruction, but in 32-bit code segment.
+    # Switches processor into 32-bit mode.
+    ljmp $PROT_MODE_CSEG, $protcseg		#长跳转的同时设置CS寄存器的值
+    ```
+    这一段x86汇编代码开启了A20。
 
 2. (option)请在rcore中找一段你认为难度适当的RV汇编代码，尝试解释其含义。
 
 #### 练习二
 
 宏定义和引用在内核代码中很常用。请枚举ucore或rcore中宏定义的用途，并举例描述其含义。
+* 通过宏定义来辅助实现段页式寻址机制：PTX（）、PDX（）等。
+* 配合双向链表使用：le2page(),page2le()等
 
 #### reference
  - [Intel格式和AT&T格式汇编区别](http://www.cnblogs.com/hdk1993/p/4820353.html)
